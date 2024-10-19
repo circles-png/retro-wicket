@@ -1,13 +1,13 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_lossless,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
 )]
 
 use macroquad::color::Color;
 use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::Rect;
-use macroquad::texture::{draw_texture_ex, DrawTextureParams};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
     color_u8,
@@ -16,7 +16,7 @@ use macroquad::{
     text::{load_ttf_font_from_bytes, measure_text, Font, TextDimensions},
     ui::{
         hash, root_ui,
-        widgets::{Button, Texture, Window},
+        widgets::{Texture, Window},
         Skin,
     },
 };
@@ -86,8 +86,8 @@ impl Distribution<CoinSide> for Standard {
 impl CoinSide {
     fn texture(self) -> Texture2D {
         match self {
-            CoinSide::Heads => include_texture!("heads"),
-            CoinSide::Tails => include_texture!("tails"),
+            Self::Heads => include_texture!("heads"),
+            Self::Tails => include_texture!("tails"),
         }
     }
 }
@@ -198,8 +198,8 @@ impl Distribution<Role> for Standard {
 impl Role {
     fn texture(self) -> Texture2D {
         match self {
-            Role::Batting => include_texture!("bat"),
-            Role::Fielding => include_texture!("field"),
+            Self::Batting => include_texture!("bat"),
+            Self::Fielding => include_texture!("field"),
         }
     }
 }
@@ -242,14 +242,6 @@ impl<'n> Game<'n> {
         Self::scale() * length
     }
 
-    fn untransform_point(point: Vec2) -> Vec2 {
-        (point - Self::screen_size() / 2. + Self::scale() * Self::SIZE / 2.) / Self::scale()
-    }
-
-    fn untransform_size(size: Vec2) -> Vec2 {
-        size / Self::scale()
-    }
-
     fn untransform_length(length: f32) -> f32 {
         length / Self::scale()
     }
@@ -271,16 +263,18 @@ impl<'n> Game<'n> {
                 State::ShowingCoinResult { .. } => {
                     self.draw_showing_coin_result();
                 }
-                State::Playing { .. } => {}
+                State::Playing { .. } => {
+                    todo!()
+                }
             }
             next_frame().await;
         }
     }
 
+    const HIGHLIGHT_ALPHA: u8 = 20;
     fn draw_showing_coin_result(&mut self) {
         const TEXTURE_SIZE: f32 = 40.;
         const TEXT_GAP: f32 = 2.;
-        const HIGHLIGHT_ALPHA: u8 = 20;
         const TEXT_SIZE: u16 = 2;
         const X_GAP: f32 = 100.;
         const HEADING_TEXT_GAP: f32 = 10.;
@@ -289,90 +283,14 @@ impl<'n> Game<'n> {
             bet,
             result,
             opponent_choice,
-        } = &mut self.state
+        } = self.state
         else {
             unreachable!()
         };
         Self::window(|ui| {
             if bet == result {
-                ui.push_skin(&text_style);
-                let position = Self::transform_point(vec2(
-                    match mouse_position_local().x.total_cmp(&0.) {
-                        Ordering::Less | Ordering::Equal => 0.,
-                        Ordering::Greater => Self::SIZE.x / 2.,
-                    },
-                    0.,
-                ));
-                let size = Self::transform_size(vec2(Self::SIZE.x / 2., Self::SIZE.y));
-                ui.canvas().rect(
-                    Rect::new(position.x, position.y, size.x, size.y),
-                    color_u8!(0, 0, 0, 0),
-                    color_u8!(0, 0, 0, HIGHLIGHT_ALPHA),
-                );
-
-                for (x_side, role, lines) in [
-                    (
-                        -1.,
-                        Role::Batting,
-                        ["You bat first", "Opponent fields first"],
-                    ),
-                    (
-                        1.,
-                        Role::Fielding,
-                        ["You field first", "Opponent bats first"],
-                    ),
-                ] {
-                    let total_height = TEXTURE_SIZE
-                        + TEXT_GAP * 2.
-                        + Self::untransform_length(
-                            lines
-                                .into_iter()
-                                .map(|line| {
-                                    self.text_measurer
-                                        .measure(TextMeasureInput {
-                                            text: line.to_string(),
-                                            size: Self::transform_length(TEXT_SIZE as f32) as u16,
-                                        })
-                                        .height
-                                })
-                                .sum(),
-                        );
-                    Texture::new(role.texture())
-                        .position(Self::transform_size(vec2(
-                            Self::SIZE.x / 2. + x_side * X_GAP / 2. - TEXTURE_SIZE / 2.,
-                            Self::SIZE.y / 2. - total_height / 2.,
-                        )))
-                        .size(
-                            Self::transform_length(TEXTURE_SIZE),
-                            Self::transform_length(TEXTURE_SIZE),
-                        )
-                        .ui(ui);
-
-                    let mut total_text_height = 0.;
-                    for (index, line) in lines.into_iter().enumerate() {
-                        let dimensions = self.text_measurer.measure(TextMeasureInput {
-                            text: line.to_string(),
-                            size: Self::transform_length(TEXT_SIZE as f32) as u16,
-                        });
-                        ui.label(
-                            Self::transform_size(vec2(
-                                Self::SIZE.x / 2. + x_side * X_GAP / 2.
-                                    - Self::untransform_length(dimensions.width / 2.),
-                                Self::SIZE.y / 2. - total_height / 2.
-                                    + TEXTURE_SIZE
-                                    + TEXT_GAP
-                                    + index as f32 * TEXT_GAP
-                                    + total_text_height
-                                    - Self::untransform_length(dimensions.height / 2.),
-                            )),
-                            line,
-                        );
-                        total_text_height += Self::untransform_length(dimensions.height);
-                    }
-                }
-                ui.pop_skin();
+                self.draw_choose_role(ui, &text_style, TEXTURE_SIZE, X_GAP, TEXT_GAP, TEXT_SIZE);
             }
-
             ui.push_skin(&heading_style);
             Texture::new(result.texture())
                 .position(Self::transform_size(
@@ -383,7 +301,7 @@ impl<'n> Game<'n> {
                     Self::transform_length(TEXTURE_SIZE),
                 )
                 .ui(ui);
-            let text = format!("{}!", result);
+            let text = format!("{result}!");
             let dimensions = self.text_measurer.measure(TextMeasureInput {
                 text: text.clone(),
                 size: Self::transform_length(Self::HEADING_TEXT_SIZE as f32) as u16,
@@ -422,10 +340,118 @@ impl<'n> Game<'n> {
                 )),
                 &text,
             );
-            if is_mouse_button_released(MouseButton::Left) {
-                todo!()
-            }
         });
+        if is_mouse_button_released(MouseButton::Left) {
+            if bet == result {
+                match mouse_position_local().x.total_cmp(&0.) {
+                    Ordering::Less | Ordering::Equal => {
+                        self.state = State::Playing {
+                            inning: 0,
+                            teams: Teams::new(["You", "Opponent"]),
+                        }
+                    }
+                    Ordering::Greater => {
+                        self.state = State::Playing {
+                            inning: 0,
+                            teams: Teams::new(["Opponent", "You"]),
+                        }
+                    }
+                }
+            } else {
+                self.state = State::Playing {
+                    inning: 0,
+                    teams: match opponent_choice {
+                        Role::Batting => Teams::new(["Opponent", "You"]),
+                        Role::Fielding => Teams::new(["You", "Opponent"]),
+                    },
+                }
+            }
+        }
+    }
+
+    fn draw_choose_role(
+        &mut self,
+        ui: &mut Ui,
+        text_style: &Skin,
+        texture_size: f32,
+        x_gap: f32,
+        text_gap: f32,
+        text_size: u16,
+    ) {
+        ui.push_skin(text_style);
+        let position = Self::transform_point(vec2(
+            match mouse_position_local().x.total_cmp(&0.) {
+                Ordering::Less | Ordering::Equal => 0.,
+                Ordering::Greater => Self::SIZE.x / 2.,
+            },
+            0.,
+        ));
+        let size = Self::transform_size(vec2(Self::SIZE.x / 2., Self::SIZE.y));
+        ui.canvas().rect(
+            Rect::new(position.x, position.y, size.x, size.y),
+            color_u8!(0, 0, 0, 0),
+            color_u8!(0, 0, 0, Self::HIGHLIGHT_ALPHA),
+        );
+
+        for (x_side, role, lines) in [
+            (
+                -1.,
+                Role::Batting,
+                ["You bat first", "Opponent fields first"],
+            ),
+            (
+                1.,
+                Role::Fielding,
+                ["You field first", "Opponent bats first"],
+            ),
+        ] {
+            let total_height = text_gap.mul_add(2., texture_size)
+                + Self::untransform_length(
+                    lines
+                        .into_iter()
+                        .map(|line| {
+                            self.text_measurer
+                                .measure(TextMeasureInput {
+                                    text: line.to_string(),
+                                    size: Self::transform_length(text_size as f32) as u16,
+                                })
+                                .height
+                        })
+                        .sum(),
+                );
+            Texture::new(role.texture())
+                .position(Self::transform_size(vec2(
+                    Self::SIZE.x / 2. + x_side * x_gap / 2. - texture_size / 2.,
+                    Self::SIZE.y / 2. - total_height / 2.,
+                )))
+                .size(
+                    Self::transform_length(texture_size),
+                    Self::transform_length(texture_size),
+                )
+                .ui(ui);
+
+            let mut total_text_height = 0.;
+            for (index, line) in lines.into_iter().enumerate() {
+                let dimensions = self.text_measurer.measure(TextMeasureInput {
+                    text: line.to_string(),
+                    size: Self::transform_length(text_size as f32) as u16,
+                });
+                ui.label(
+                    Self::transform_size(vec2(
+                        Self::SIZE.x / 2. + x_side * x_gap / 2.
+                            - Self::untransform_length(dimensions.width / 2.),
+                        (index as f32).mul_add(
+                            text_gap,
+                            Self::SIZE.y / 2. - total_height / 2. + texture_size + text_gap,
+                        ) + total_text_height
+                            - Self::untransform_length(dimensions.height / 2.),
+                    )),
+                    line,
+                );
+                total_text_height += Self::untransform_length(dimensions.height);
+            }
+        }
+        ui.pop_skin();
     }
 
     const SIZE: Vec2 = vec2(160., 100.);
@@ -445,14 +471,14 @@ impl<'n> Game<'n> {
             ) {
                 f(textures, N);
             }
-            inner(include_textures!("coin-flip", 1..=21), |textures, len| {
+            inner(include_textures!("coin-flip", 1..=16), |textures, len| {
                 let index = (Instant::now()
                     .saturating_duration_since(start)
                     .as_secs_f32()
                     * ANIMATION_FRAMES_PER_SECOND) as usize;
                 let texture = textures.into_iter().nth(index.min(len - 1)).unwrap();
                 let height = Self::SIZE.y - TOP - BOTTOM;
-                let width = height * texture.width() as f32 / texture.height() as f32;
+                let width = height * texture.width() / texture.height();
                 let size = Self::transform_size(vec2(width, height));
                 Texture::new(texture)
                     .position(Self::transform_size(vec2(
@@ -569,7 +595,6 @@ impl<'n> Game<'n> {
         const TEXTURE_TOP: f32 = 30.;
         const TEXT_GAP: f32 = 2.;
         const TEXTURE_SIZE: f32 = 40.;
-        const HIGHLIGHT_ALPHA: u8 = 20;
         let [heading_style, text_style] = self.skins([Self::HEADING_TEXT_SIZE, Self::TEXT_SIZE]);
 
         Self::window(|ui| {
@@ -625,7 +650,7 @@ impl<'n> Game<'n> {
             ui.canvas().rect(
                 Rect::new(position.x, position.y, size.x, size.y),
                 color_u8!(0, 0, 0, 0),
-                color_u8!(0, 0, 0, HIGHLIGHT_ALPHA),
+                color_u8!(0, 0, 0, Self::HIGHLIGHT_ALPHA),
             );
 
             if is_mouse_button_released(MouseButton::Left) {
