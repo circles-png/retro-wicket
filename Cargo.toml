@@ -1,0 +1,13 @@
+[package]
+name = "retro-wicket"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+macroquad = "0.4.13"
+rand = "0.8.5"
+strum = { version = "0.26.3", features = ["derive"] }
+retro-wicket-macros = { path = "retro-wicket-macros" }
+
+[workspace]
+members = ["retro-wicket-macros", "."]
