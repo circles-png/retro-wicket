@@ -12,7 +12,7 @@ use macroquad::math::{vec3, Quat, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
 use macroquad::models::{
-    draw_cylinder, draw_cylinder_wires, draw_line_3d, draw_plane, draw_sphere,
+    draw_cylinder, draw_line_3d, draw_plane, draw_sphere,
 };
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::time::get_frame_time;
@@ -27,7 +27,7 @@ use macroquad::{
         Skin,
     },
 };
-use nalgebra::{Isometry3, Vector3};
+use nalgebra::Vector3;
 use rand::distributions::{Distribution, Standard};
 use rand::{random, Rng};
 use rapier3d::na::vector;
@@ -301,7 +301,7 @@ impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
-        let render_target = render_target(Self::SIZE.x as u32 * 4, Self::SIZE.y as u32 * 4);
+        let render_target = render_target(Self::SIZE.x as u32, Self::SIZE.y as u32);
         render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
@@ -841,10 +841,12 @@ impl<'n> Game<'n> {
         const TEXTURE_SIZE: f32 = 40.;
         const TEXTURE_TOP: f32 = 50.;
         const TEXT_GAP: f32 = 2.;
+        let [text_style] = self.skins([Self::TEXT_SIZE]);
         let State::TossingCoin { bet, mouse_down_y } = &mut self.state else {
             unreachable!()
         };
         Self::window(|ui| {
+            ui.push_skin(&text_style);
             let texture = include_texture!("coin-drag");
             let position =
                 Self::transform_size(vec2(Self::SIZE.x / 2. - TEXTURE_SIZE / 2., TEXTURE_TOP));
