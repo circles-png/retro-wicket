@@ -9,9 +9,7 @@ use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::Color;
 use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Rect, Vec3};
-use macroquad::models::{
-    draw_cylinder_wires, draw_line_3d, draw_plane,
-};
+use macroquad::models::{draw_cylinder_wires, draw_line_3d, draw_plane};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, RenderTarget};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
@@ -206,6 +204,20 @@ impl Role {
         match self {
             Self::Batting => include_texture!("bat"),
             Self::Fielding => include_texture!("field"),
+        }
+    }
+}
+
+enum ScreenSide {
+    Left,
+    Right,
+}
+
+impl ScreenSide {
+    fn from_mouse_position() -> Self {
+        match mouse_position_local().x.total_cmp(&0.) {
+            Ordering::Less | Ordering::Equal => Self::Left,
+            Ordering::Greater => Self::Right,
         }
     }
 }
@@ -485,14 +497,14 @@ impl<'n> Game<'n> {
         });
         if is_mouse_button_released(MouseButton::Left) {
             if bet == result {
-                match mouse_position_local().x.total_cmp(&0.) {
-                    Ordering::Less | Ordering::Equal => {
+                match ScreenSide::from_mouse_position() {
+                    ScreenSide::Left => {
                         self.state = State::Playing {
                             inning: 0,
                             teams: Teams::new(["You", "Opponent"]),
                         }
                     }
-                    Ordering::Greater => {
+                    ScreenSide::Right => {
                         self.state = State::Playing {
                             inning: 0,
                             teams: Teams::new(["Opponent", "You"]),
@@ -782,9 +794,9 @@ impl<'n> Game<'n> {
             }
 
             let position = Self::transform_point(vec2(
-                match mouse_position_local().x.total_cmp(&0.) {
-                    Ordering::Less | Ordering::Equal => 0.,
-                    Ordering::Greater => Self::SIZE.x / 2.,
+                match ScreenSide::from_mouse_position() {
+                    ScreenSide::Left => 0.,
+                    ScreenSide::Right => Self::SIZE.x / 2.,
                 },
                 0.,
             ));
