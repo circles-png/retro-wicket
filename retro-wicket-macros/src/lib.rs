@@ -80,3 +80,27 @@ pub fn include_textures(input: TokenStream) -> TokenStream {
     let tokens = quote! { [#tokens] };
     tokens.into()
 }
+
+#[proc_macro]
+pub fn hex(input: TokenStream) -> TokenStream {
+    let to_string = input.to_string();
+    u32::from_str_radix(&to_string, 16)
+        .ok()
+        .filter(|_| to_string.len() == 6)
+        .map_or_else(
+            || {
+                Error::new_spanned(
+                    proc_macro2::TokenStream::from(input),
+                    "expected a 6 digit hexadecimal number without a #",
+                )
+                .to_compile_error()
+            },
+            |colour| {
+                let [_, red, green, blue] = colour.to_be_bytes();
+                quote! {
+                    macroquad::color_u8!(#red, #green, #blue, 255)
+                }
+            },
+        )
+        .into()
+}

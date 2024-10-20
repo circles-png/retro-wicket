@@ -6,14 +6,13 @@
 )]
 
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
-use macroquad::color::Color;
+use macroquad::color::{Color, WHITE};
 use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Rect, Vec3};
 use macroquad::models::{draw_cylinder_wires, draw_line_3d, draw_plane};
-use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, RenderTarget};
+use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
-    color_u8,
     input::{is_mouse_button_released, mouse_position_local, MouseButton},
     prelude::FilterMode,
     text::{load_ttf_font_from_bytes, measure_text, Font, TextDimensions},
@@ -25,7 +24,7 @@ use macroquad::{
 };
 use rand::distributions::{Distribution, Standard};
 use rand::{random, Rng};
-use retro_wicket_macros::include_textures;
+use retro_wicket_macros::{hex, include_textures};
 use std::time::Instant;
 use std::{
     cmp::Ordering,
@@ -36,7 +35,6 @@ use std::{
 use strum::Display;
 
 use macroquad::{
-    color::{BLACK, WHITE},
     main,
     math::{vec2, Vec2},
     prelude::ImageFormat,
@@ -113,7 +111,7 @@ enum State<'n> {
         opponent_choice: Role,
     },
     Playing {
-        inning: usize,
+        innings: usize,
         teams: Teams<'n>,
     },
 }
@@ -222,6 +220,55 @@ impl ScreenSide {
     }
 }
 
+#[allow(unused)]
+enum Colour {
+    Black,
+    DarkBlue,
+    DarkPurple,
+    DarkGreen,
+    Brown,
+    DarkGrey,
+    LightGrey,
+    White,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Lavender,
+    Pink,
+    LightPeach,
+}
+
+impl Colour {
+    const fn colour(self) -> Color {
+        match self {
+            Self::Black => hex!(000000),
+            Self::DarkBlue => hex!(1D2B53),
+            Self::DarkPurple => hex!(7E2553),
+            Self::DarkGreen => hex!(008751),
+            Self::Brown => hex!(AB5236),
+            Self::DarkGrey => hex!(5F574F),
+            Self::LightGrey => hex!(C2C3C7),
+            Self::White => hex!(FFF1E8),
+            Self::Red => hex!(FF004D),
+            Self::Orange => hex!(FFA300),
+            Self::Yellow => hex!(FFEC27),
+            Self::Green => hex!(00E436),
+            Self::Blue => hex!(29ADFF),
+            Self::Lavender => hex!(83769C),
+            Self::Pink => hex!(FF77A8),
+            Self::LightPeach => hex!(FFCCAA),
+        }
+    }
+}
+
+macro_rules! colour {
+    ($colour:ident) => {
+        Colour::$colour.colour()
+    };
+}
+
 impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
@@ -240,21 +287,21 @@ impl<'n> Game<'n> {
         let size_pixels = Self::transform_size(Self::SIZE);
         let position = Self::transform_point(Vec2::ZERO);
 
-        draw_rectangle(0., 0., position.x, size_pixels.y, BLACK);
+        draw_rectangle(0., 0., position.x, size_pixels.y, colour!(Black));
         draw_rectangle(
             position.x + size_pixels.x,
             0.,
             position.x,
             size_pixels.y,
-            BLACK,
+            colour!(Black),
         );
-        draw_rectangle(0., 0., size_pixels.x, position.y, BLACK);
+        draw_rectangle(0., 0., size_pixels.x, position.y, colour!(Black));
         draw_rectangle(
             0.,
             position.y + size_pixels.y,
             size_pixels.x,
             position.y,
-            BLACK,
+            colour!(Black),
         );
     }
 
@@ -309,7 +356,7 @@ impl<'n> Game<'n> {
     }
 
     fn draw_playing(&self) {
-        self.draw_playing_3d();
+        self.draw_playing_to_render_texture();
 
         set_default_camera();
         let position = Self::transform_point(Vec2::ZERO);
@@ -326,7 +373,7 @@ impl<'n> Game<'n> {
         );
     }
 
-    fn draw_playing_3d(&self) {
+    fn draw_playing_to_render_texture(&self) {
         const TARGET: Vec3 = vec3(0., 0., 0.);
         const POSITION: Vec3 = vec3(0., 2., 14.);
         const BOWLING_CREASE_TO_END: f32 = 1.22;
@@ -342,6 +389,10 @@ impl<'n> Game<'n> {
         const STUMP_DISTANCE: f32 = STUMP_DIAMETER + BETWEEN_STUMPS;
         const PITCH_LENGTH: f32 = BETWEEN_WICKETS + 2. * BOWLING_CREASE_TO_END;
 
+        const LINE_COLOUR: Color = colour!(White);
+        const GRASS_COLOUR: Color = colour!(DarkGreen);
+        const PITCH_COLOUR: Color = colour!(LightPeach);
+
         set_camera(&Camera3D {
             aspect: Some(Self::SIZE.x / Self::SIZE.y),
             target: TARGET,
@@ -352,18 +403,13 @@ impl<'n> Game<'n> {
             viewport: None,
             render_target: Some(self.render_target.clone()),
         });
-        clear_background(color_u8!(168, 228, 255, 255));
-        draw_plane(
-            Vec3::ZERO,
-            vec2(1000., 1000.),
-            None,
-            color_u8!(84, 148, 52, 255),
-        );
+        clear_background(colour!(Blue));
+        draw_plane(Vec3::ZERO, vec2(1000., 1000.), None, GRASS_COLOUR);
         draw_plane(
             Vec3::ZERO,
             vec2(PITCH_WIDTH / 2., PITCH_LENGTH / 2.),
             None,
-            color_u8!(255, 210, 138, 255),
+            PITCH_COLOUR,
         );
         for side in [-1., 1.] {
             for stump in [-1., 0., 1.] {
@@ -377,7 +423,7 @@ impl<'n> Game<'n> {
                     STUMP_DIAMETER / 2.,
                     STUMP_HEIGHT,
                     None,
-                    color_u8!(0, 0, 255, 255),
+                    LINE_COLOUR,
                 );
             }
 
@@ -392,7 +438,7 @@ impl<'n> Game<'n> {
                     0.,
                     side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
                 ),
-                color_u8!(0, 255, 0, 255),
+                LINE_COLOUR,
             );
             draw_line_3d(
                 vec3(
@@ -405,7 +451,7 @@ impl<'n> Game<'n> {
                     0.,
                     side * (BETWEEN_WICKETS / 2.),
                 ),
-                color_u8!(0, 255, 0, 255),
+                LINE_COLOUR,
             );
             for return_crease in [-1., 1.] {
                 draw_line_3d(
@@ -419,13 +465,12 @@ impl<'n> Game<'n> {
                         0.,
                         side * (BETWEEN_WICKETS / 2. + BOWLING_CREASE_TO_END),
                     ),
-                    color_u8!(0, 255, 0, 255),
+                    LINE_COLOUR,
                 );
             }
         }
     }
 
-    const HIGHLIGHT_ALPHA: u8 = 20;
     fn draw_showing_coin_result(&mut self) {
         const TEXTURE_SIZE: f32 = 40.;
         const TEXT_GAP: f32 = 2.;
@@ -500,20 +545,20 @@ impl<'n> Game<'n> {
                 match ScreenSide::from_mouse_position() {
                     ScreenSide::Left => {
                         self.state = State::Playing {
-                            inning: 0,
+                            innings: 0,
                             teams: Teams::new(["You", "Opponent"]),
                         }
                     }
                     ScreenSide::Right => {
                         self.state = State::Playing {
-                            inning: 0,
+                            innings: 0,
                             teams: Teams::new(["Opponent", "You"]),
                         }
                     }
                 }
             } else {
                 self.state = State::Playing {
-                    inning: 0,
+                    innings: 0,
                     teams: match opponent_choice {
                         Role::Batting => Teams::new(["Opponent", "You"]),
                         Role::Fielding => Teams::new(["You", "Opponent"]),
@@ -543,8 +588,8 @@ impl<'n> Game<'n> {
         let size = Self::transform_size(vec2(Self::SIZE.x / 2., Self::SIZE.y));
         ui.canvas().rect(
             Rect::new(position.x, position.y, size.x, size.y),
-            color_u8!(0, 0, 0, 0),
-            color_u8!(0, 0, 0, Self::HIGHLIGHT_ALPHA),
+            None,
+            Self::HIGHLIGHT_COLOUR,
         );
 
         for (x_side, role, lines) in [
@@ -735,13 +780,17 @@ impl<'n> Game<'n> {
                 .with_font(&self.font)
                 .unwrap()
                 .font_size(Self::transform_length(size as f32) as u16)
+                .background(Image::gen_image_color(1, 1, Self::BACKGROUND_COLOUR))
                 .build();
             Self::make_skin(&style)
         })
     }
 
+    const BACKGROUND_COLOUR: Color = colour!(LightPeach);
+
     const HEADING_TEXT_SIZE: u16 = 10;
     const TEXT_SIZE: u16 = 5;
+    const HIGHLIGHT_COLOUR: Color = colour!(Yellow);
 
     fn draw_picking_side(&mut self) {
         const GAP: f32 = 80.;
@@ -752,6 +801,20 @@ impl<'n> Game<'n> {
         let [heading_style, text_style] = self.skins([Self::HEADING_TEXT_SIZE, Self::TEXT_SIZE]);
 
         Self::window(|ui| {
+            let position = Self::transform_point(vec2(
+                match ScreenSide::from_mouse_position() {
+                    ScreenSide::Left => 0.,
+                    ScreenSide::Right => Self::SIZE.x / 2.,
+                },
+                0.,
+            ));
+            let size = Self::transform_size(vec2(Self::SIZE.x / 2., Self::SIZE.y));
+            ui.canvas().rect(
+                Rect::new(position.x, position.y, size.x, size.y),
+                None,
+                Self::HIGHLIGHT_COLOUR,
+            );
+
             ui.push_skin(&heading_style);
             let text = "Pick a side";
             let dimensions = self.text_measurer.measure(TextMeasureInput {
@@ -792,20 +855,6 @@ impl<'n> Game<'n> {
                     &side.to_string(),
                 );
             }
-
-            let position = Self::transform_point(vec2(
-                match ScreenSide::from_mouse_position() {
-                    ScreenSide::Left => 0.,
-                    ScreenSide::Right => Self::SIZE.x / 2.,
-                },
-                0.,
-            ));
-            let size = Self::transform_size(vec2(Self::SIZE.x / 2., Self::SIZE.y));
-            ui.canvas().rect(
-                Rect::new(position.x, position.y, size.x, size.y),
-                color_u8!(0, 0, 0, 0),
-                color_u8!(0, 0, 0, Self::HIGHLIGHT_ALPHA),
-            );
 
             if is_mouse_button_released(MouseButton::Left) {
                 self.state = State::TossingCoin {
