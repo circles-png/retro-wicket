@@ -8,11 +8,14 @@
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::{Color, WHITE};
 use macroquad::input::is_mouse_button_pressed;
-use macroquad::math::{vec3, Rect, Vec3};
+use macroquad::math::{vec3, Quat, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
-use macroquad::models::{draw_cylinder_wires, draw_line_3d, draw_plane, draw_sphere, draw_sphere_ex};
+use macroquad::models::{
+    draw_cylinder, draw_cylinder_wires, draw_line_3d, draw_plane, draw_sphere,
+};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
+use macroquad::time::get_frame_time;
 use macroquad::ui::{Style, Ui};
 use macroquad::{
     input::{is_mouse_button_released, mouse_position_local, MouseButton},
@@ -24,8 +27,15 @@ use macroquad::{
         Skin,
     },
 };
+use nalgebra::{Isometry3, Vector3};
 use rand::distributions::{Distribution, Standard};
 use rand::{random, Rng};
+use rapier3d::na::vector;
+use rapier3d::prelude::{
+    CCDSolver, ColliderBuilder, ColliderSet, DefaultBroadPhase, ImpulseJointSet,
+    IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
+    QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
+};
 use retro_wicket_macros::{hex, include_textures};
 use std::time::Instant;
 use std::{
@@ -63,7 +73,6 @@ async fn main() {
     Game::new().run().await;
 }
 
-#[derive(Debug, Clone)]
 struct Game<'n> {
     state: State<'n>,
     font: Font,
@@ -96,7 +105,7 @@ impl CoinSide {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 enum State<'n> {
     PickingSide,
     TossingCoin {
@@ -115,6 +124,23 @@ enum State<'n> {
     Playing {
         innings: usize,
         teams: Teams<'n>,
+
+        camera_target: Vec3,
+        camera_position: Vec3,
+
+        bodies: RigidBodySet,
+        colliders: ColliderSet,
+        gravity: Vector3<f32>,
+        integration_parameters: IntegrationParameters,
+        physics_pipeline: PhysicsPipeline,
+        islands: IslandManager,
+        broad_phase: DefaultBroadPhase,
+        narrow_phase: NarrowPhase,
+        impulse_joints: ImpulseJointSet,
+        multibody_joints: MultibodyJointSet,
+        ccd_solver: CCDSolver,
+        query_pipeline: QueryPipeline,
+        ball_rigidbody_handle: RigidBodyHandle,
     },
 }
 
@@ -275,7 +301,7 @@ impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
-        let render_target = render_target(Self::SIZE.x as u32 * 2, Self::SIZE.y as u32 * 2);
+        let render_target = render_target(Self::SIZE.x as u32 * 4, Self::SIZE.y as u32 * 4);
         render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
@@ -362,7 +388,7 @@ impl<'n> Game<'n> {
         }
     }
 
-    fn draw_playing(&self) {
+    fn draw_playing(&mut self) {
         self.draw_playing_to_render_texture();
 
         set_default_camera();
@@ -380,32 +406,56 @@ impl<'n> Game<'n> {
         );
     }
 
-    fn draw_playing_to_render_texture(&self) {
-        const TARGET: Vec3 = vec3(0., 0., 0.);
-        const POSITION: Vec3 = vec3(0., 2., 14.);
-        const BOWLING_CREASE_TO_END: f32 = 1.22;
-        const PITCH_WIDTH: f32 = 3.05;
-        const BOWLING_CREASE_TO_POPPING_CREASE: f32 = 1.22;
-        const STUMP_DIAMETER: f32 = 0.034;
-        const BETWEEN_STUMPS: f32 = 0.054;
-        const STUMP_HEIGHT: f32 = 0.71;
-        const BETWEEN_WICKETS: f32 = 20.12;
-        const POPPING_CREASE_LENGTH: f32 = 3.66;
-        const BOWLING_CREASE_LENGTH: f32 = 2.64;
+    const BALL_RADIUS: f32 = 0.036;
+    const TARGET: Vec3 = vec3(0., 0., 0.);
+    const POSITION: Vec3 = vec3(0., 5., 20.);
+    const BOWLING_CREASE_TO_END: f32 = 1.22;
+    const PITCH_WIDTH: f32 = 3.05;
+    const BOWLING_CREASE_TO_POPPING_CREASE: f32 = 1.22;
+    const STUMP_DIAMETER: f32 = 0.034;
+    const BETWEEN_STUMPS: f32 = 0.054;
+    const STUMP_HEIGHT: f32 = 0.71;
+    const BETWEEN_WICKETS: f32 = 20.12;
+    const POPPING_CREASE_LENGTH: f32 = 3.66;
+    const BOWLING_CREASE_LENGTH: f32 = 2.64;
 
-        const STUMP_DISTANCE: f32 = STUMP_DIAMETER + BETWEEN_STUMPS;
-        const PITCH_LENGTH: f32 = BETWEEN_WICKETS + 2. * BOWLING_CREASE_TO_END;
+    const STUMP_DISTANCE: f32 = Self::STUMP_DIAMETER + Self::BETWEEN_STUMPS;
+    const PITCH_LENGTH: f32 = Self::BETWEEN_WICKETS + 2. * Self::BOWLING_CREASE_TO_END;
 
-        const LINE_COLOUR: Color = colour!(White);
-        const GRASS_COLOUR: Color = colour!(DarkGreen);
-        const PITCH_COLOUR: Color = colour!(LightPeach);
-        const BALL_COLOUR: Color = colour!(Red);
-        const BALL_RADIUS: f32 = 0.036;
+    const LINE_COLOUR: Color = colour!(White);
+    const GRASS_COLOUR: Color = colour!(DarkGreen);
+    const PITCH_COLOUR: Color = colour!(LightPeach);
+    const BALL_COLOUR: Color = colour!(Red);
+    fn draw_playing_to_render_texture(&mut self) {
+        let State::Playing {
+            innings,
+            teams,
+
+            camera_position,
+            camera_target,
+
+            bodies,
+            colliders,
+            gravity,
+            integration_parameters,
+            physics_pipeline,
+            islands,
+            broad_phase,
+            narrow_phase,
+            impulse_joints,
+            multibody_joints,
+            ccd_solver,
+            query_pipeline,
+            ball_rigidbody_handle: ball_body_handle,
+        } = &mut self.state
+        else {
+            unreachable!()
+        };
 
         set_camera(&Camera3D {
             aspect: Some(Self::SIZE.x / Self::SIZE.y),
-            target: TARGET,
-            position: POSITION,
+            target: *camera_target,
+            position: *camera_position,
             up: Vec3::Y,
             fovy: 30_f32.to_radians(),
             projection: Projection::Perspective,
@@ -413,73 +463,110 @@ impl<'n> Game<'n> {
             render_target: Some(self.render_target.clone()),
         });
         clear_background(colour!(Blue));
-        draw_plane(Vec3::ZERO, vec2(1000., 1000.), None, GRASS_COLOUR);
+        draw_plane(Vec3::ZERO, vec2(1000., 1000.), None, Self::GRASS_COLOUR);
         draw_plane(
             Vec3::ZERO,
-            vec2(PITCH_WIDTH / 2., PITCH_LENGTH / 2.),
+            vec2(Self::PITCH_WIDTH / 2., Self::PITCH_LENGTH / 2.),
             None,
-            PITCH_COLOUR,
+            Self::PITCH_COLOUR,
         );
+        Self::draw_lines();
+
+        let get_frame_time = get_frame_time();
+        integration_parameters.dt = get_frame_time;
+        physics_pipeline.step(
+            gravity,
+            integration_parameters,
+            islands,
+            broad_phase,
+            narrow_phase,
+            bodies,
+            colliders,
+            impulse_joints,
+            multibody_joints,
+            ccd_solver,
+            Some(query_pipeline),
+            &(),
+            &(),
+        );
+
+        let ball_body = &bodies[*ball_body_handle];
+        draw_sphere(
+            (*ball_body.translation()).into(),
+            Self::BALL_RADIUS + 0.01,
+            None,
+            colour!(Black),
+        );
+        draw_sphere(
+            (*ball_body.translation()).into(),
+            Self::BALL_RADIUS,
+            None,
+            Self::BALL_COLOUR,
+        );
+
+        *camera_position = Quat::from_axis_angle(Vec3::Y, get_frame_time / 10.) * *camera_position;
+    }
+
+    fn draw_lines() {
         for side in [-1., 1.] {
             for stump in [-1., 0., 1.] {
-                draw_cylinder_wires(
+                draw_cylinder(
                     vec3(
-                        stump * STUMP_DISTANCE,
-                        STUMP_HEIGHT / 2.,
-                        side * BETWEEN_WICKETS / 2.,
+                        stump * Self::STUMP_DISTANCE,
+                        0.,
+                        side * Self::BETWEEN_WICKETS / 2.,
                     ),
-                    STUMP_DIAMETER / 2.,
-                    STUMP_DIAMETER / 2.,
-                    STUMP_HEIGHT,
+                    Self::STUMP_DIAMETER / 2.,
+                    Self::STUMP_DIAMETER / 2.,
+                    Self::STUMP_HEIGHT,
                     None,
-                    LINE_COLOUR,
+                    Self::LINE_COLOUR,
                 );
             }
 
             draw_line_3d(
                 vec3(
-                    -POPPING_CREASE_LENGTH / 2.,
+                    -Self::POPPING_CREASE_LENGTH / 2.,
                     0.,
-                    side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                    side * (Self::BETWEEN_WICKETS / 2. - Self::BOWLING_CREASE_TO_POPPING_CREASE),
                 ),
                 vec3(
-                    POPPING_CREASE_LENGTH / 2.,
+                    Self::POPPING_CREASE_LENGTH / 2.,
                     0.,
-                    side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                    side * (Self::BETWEEN_WICKETS / 2. - Self::BOWLING_CREASE_TO_POPPING_CREASE),
                 ),
-                LINE_COLOUR,
+                Self::LINE_COLOUR,
             );
             draw_line_3d(
                 vec3(
-                    -BOWLING_CREASE_LENGTH / 2.,
+                    -Self::BOWLING_CREASE_LENGTH / 2.,
                     0.,
-                    side * (BETWEEN_WICKETS / 2.),
+                    side * (Self::BETWEEN_WICKETS / 2.),
                 ),
                 vec3(
-                    BOWLING_CREASE_LENGTH / 2.,
+                    Self::BOWLING_CREASE_LENGTH / 2.,
                     0.,
-                    side * (BETWEEN_WICKETS / 2.),
+                    side * (Self::BETWEEN_WICKETS / 2.),
                 ),
-                LINE_COLOUR,
+                Self::LINE_COLOUR,
             );
             for return_crease in [-1., 1.] {
                 draw_line_3d(
                     vec3(
-                        return_crease * BOWLING_CREASE_LENGTH / 2.,
+                        return_crease * Self::BOWLING_CREASE_LENGTH / 2.,
                         0.,
-                        side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                        side * (Self::BETWEEN_WICKETS / 2.
+                            - Self::BOWLING_CREASE_TO_POPPING_CREASE),
                     ),
                     vec3(
-                        return_crease * BOWLING_CREASE_LENGTH / 2.,
+                        return_crease * Self::BOWLING_CREASE_LENGTH / 2.,
                         0.,
-                        side * (BETWEEN_WICKETS / 2. + BOWLING_CREASE_TO_END),
+                        side * (Self::BETWEEN_WICKETS / 2. + Self::BOWLING_CREASE_TO_END),
                     ),
-                    LINE_COLOUR,
+                    Self::LINE_COLOUR,
                 );
             }
         }
-
-        draw_sphere(Vec3::Y * 2., BALL_RADIUS, None, BALL_COLOUR);
     }
 
     fn draw_showing_coin_result(&mut self) {
@@ -552,30 +639,72 @@ impl<'n> Game<'n> {
             );
         });
         if is_mouse_button_released(MouseButton::Left) {
-            if bet == result {
+            self.state = Self::init_playing_state(if bet == result {
                 match ScreenSide::from_mouse_position() {
-                    ScreenSide::Left => {
-                        self.state = State::Playing {
-                            innings: 0,
-                            teams: Teams::new(["You", "Opponent"]),
-                        }
-                    }
-                    ScreenSide::Right => {
-                        self.state = State::Playing {
-                            innings: 0,
-                            teams: Teams::new(["Opponent", "You"]),
-                        }
-                    }
+                    ScreenSide::Left => Teams::new(["You", "Opponent"]),
+                    ScreenSide::Right => Teams::new(["Opponent", "You"]),
                 }
             } else {
-                self.state = State::Playing {
-                    innings: 0,
-                    teams: match opponent_choice {
-                        Role::Batting => Teams::new(["Opponent", "You"]),
-                        Role::Fielding => Teams::new(["You", "Opponent"]),
-                    },
+                match opponent_choice {
+                    Role::Batting => Teams::new(["Opponent", "You"]),
+                    Role::Fielding => Teams::new(["You", "Opponent"]),
                 }
-            }
+            });
+        }
+    }
+
+    fn init_playing_state(teams: Teams<'n>) -> State<'n> {
+        let mut bodies = RigidBodySet::new();
+        let mut colliders = ColliderSet::new();
+        colliders.insert(
+            ColliderBuilder::cuboid(1000., 1., 1000.)
+                .restitution(1.)
+                .position(vector![0., -1., 0.].into())
+                .build(),
+        );
+        let ball_rigidbody_handle =
+            bodies.insert(RigidBodyBuilder::dynamic().translation(vector![0., 2., 0.]));
+        colliders.insert_with_parent(
+            ColliderBuilder::ball(Self::BALL_RADIUS)
+                .restitution(1.)
+                .mass(0.1559)
+                .build(),
+            ball_rigidbody_handle,
+            &mut bodies,
+        );
+        bodies[ball_rigidbody_handle].add_force(vector![0., 0., 1.], true);
+
+        let gravity = vector![0., -9.81, 0.];
+        let integration_parameters = IntegrationParameters::default();
+        let physics_pipeline = PhysicsPipeline::new();
+        let island_manager = IslandManager::new();
+        let broad_phase = DefaultBroadPhase::new();
+        let narrow_phase = NarrowPhase::new();
+        let impulse_joints = ImpulseJointSet::new();
+        let multibody_joints = MultibodyJointSet::new();
+        let ccd_solver = CCDSolver::new();
+        let query_pipeline = QueryPipeline::new();
+
+        State::Playing {
+            innings: 0,
+            teams,
+
+            camera_position: Self::POSITION,
+            camera_target: Self::TARGET,
+
+            bodies,
+            colliders,
+            gravity,
+            integration_parameters,
+            physics_pipeline,
+            islands: island_manager,
+            broad_phase,
+            narrow_phase,
+            impulse_joints,
+            multibody_joints,
+            ccd_solver,
+            query_pipeline,
+            ball_rigidbody_handle,
         }
     }
 
@@ -797,7 +926,7 @@ impl<'n> Game<'n> {
         })
     }
 
-    const BACKGROUND_COLOUR: Color = colour!(LightGrey);
+    const BACKGROUND_COLOUR: Color = colour!(White);
 
     const HEADING_TEXT_SIZE: u16 = 10;
     const TEXT_SIZE: u16 = 5;

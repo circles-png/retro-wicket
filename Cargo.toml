@@ -9,6 +9,7 @@ rand = "0.8.5"
 strum = { version = "0.26.3", features = ["derive"] }
 retro-wicket-macros = { path = "retro-wicket-macros" }
 rapier3d = { version = "0.22.0", features = ["simd-nightly"] }
+nalgebra = { version = "0.33.1", features = ["convert-glam027"] }
 
 [workspace]
 members = ["retro-wicket-macros", "."]
