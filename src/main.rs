@@ -301,7 +301,7 @@ impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
-        let render_target = render_target(Self::SIZE.x as u32, Self::SIZE.y as u32);
+        let render_target = render_target(Self::SIZE.x as u32 * 4, Self::SIZE.y as u32 * 4);
         render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
