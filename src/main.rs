@@ -6,11 +6,11 @@
 )]
 
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
-use macroquad::color::{Color, GRAY};
+use macroquad::color::Color;
 use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Rect, Vec3};
 use macroquad::models::{
-    draw_cube_wires, draw_cylinder_wires, draw_grid, draw_line_3d, draw_plane,
+    draw_cylinder_wires, draw_line_3d, draw_plane,
 };
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, RenderTarget};
 use macroquad::ui::{Style, Ui};
@@ -296,7 +296,7 @@ impl<'n> Game<'n> {
         }
     }
 
-    fn draw_playing(&mut self) {
+    fn draw_playing(&self) {
         self.draw_playing_3d();
 
         set_default_camera();
@@ -314,7 +314,7 @@ impl<'n> Game<'n> {
         );
     }
 
-    fn draw_playing_3d(&mut self) {
+    fn draw_playing_3d(&self) {
         const TARGET: Vec3 = vec3(0., 0., 0.);
         const POSITION: Vec3 = vec3(0., 2., 14.);
         const BOWLING_CREASE_TO_END: f32 = 1.22;
