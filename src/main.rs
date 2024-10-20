@@ -8,7 +8,7 @@
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::{Color, WHITE};
 use macroquad::input::is_mouse_button_pressed;
-use macroquad::math::{vec3, Quat, Rect, Vec3};
+use macroquad::math::{vec3, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
 use macroquad::models::{
@@ -503,8 +503,6 @@ impl<'n> Game<'n> {
             None,
             Self::BALL_COLOUR,
         );
-
-        *camera_position = Quat::from_axis_angle(Vec3::Y, get_frame_time / 10.) * *camera_position;
     }
 
     fn draw_lines() {
