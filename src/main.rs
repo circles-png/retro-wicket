@@ -613,7 +613,7 @@ impl<'n> Game<'n> {
             ) {
                 f(textures, N);
             }
-            inner(include_textures!("coin-flip", 1..=16), |textures, len| {
+            inner(include_textures!("coin-flip", 1..=18), |textures, len| {
                 let index = (Instant::now()
                     .saturating_duration_since(start)
                     .as_secs_f32()
