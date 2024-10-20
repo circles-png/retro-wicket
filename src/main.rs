@@ -5,9 +5,14 @@
     clippy::cast_precision_loss
 )]
 
-use macroquad::color::Color;
+use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
+use macroquad::color::{Color, GRAY};
 use macroquad::input::is_mouse_button_pressed;
-use macroquad::math::Rect;
+use macroquad::math::{vec3, Rect, Vec3};
+use macroquad::models::{
+    draw_cube_wires, draw_cylinder_wires, draw_grid, draw_line_3d, draw_plane,
+};
+use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, RenderTarget};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
     color_u8,
@@ -65,6 +70,7 @@ struct Game<'n> {
     state: State<'n>,
     font: Font,
     text_measurer: TextMeasurer,
+    render_target: RenderTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
@@ -208,17 +214,36 @@ impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
+        let render_target = render_target(Self::SIZE.x as u32 * 2, Self::SIZE.y as u32 * 2);
+        render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
             font,
             text_measurer: TextMeasurer::new(font_data),
+            render_target,
         }
     }
 
-    fn draw_white_thing() {
+    fn draw_borders() {
         let size_pixels = Self::transform_size(Self::SIZE);
         let position = Self::transform_point(Vec2::ZERO);
-        draw_rectangle(position.x, position.y, size_pixels.x, size_pixels.y, WHITE);
+
+        draw_rectangle(0., 0., position.x, size_pixels.y, BLACK);
+        draw_rectangle(
+            position.x + size_pixels.x,
+            0.,
+            position.x,
+            size_pixels.y,
+            BLACK,
+        );
+        draw_rectangle(0., 0., size_pixels.x, position.y, BLACK);
+        draw_rectangle(
+            0.,
+            position.y + size_pixels.y,
+            size_pixels.x,
+            position.y,
+            BLACK,
+        );
     }
 
     fn screen_size() -> Vec2 {
@@ -248,8 +273,8 @@ impl<'n> Game<'n> {
 
     async fn run(&mut self) {
         loop {
-            clear_background(BLACK);
-            Self::draw_white_thing();
+            set_default_camera();
+            Self::draw_borders();
             match &mut self.state {
                 State::PickingSide => {
                     self.draw_picking_side();
@@ -264,10 +289,127 @@ impl<'n> Game<'n> {
                     self.draw_showing_coin_result();
                 }
                 State::Playing { .. } => {
-                    todo!()
+                    self.draw_playing();
                 }
             }
             next_frame().await;
+        }
+    }
+
+    fn draw_playing(&mut self) {
+        self.draw_playing_3d();
+
+        set_default_camera();
+        let position = Self::transform_point(Vec2::ZERO);
+        draw_texture_ex(
+            &self.render_target.texture,
+            position.x,
+            position.y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Self::transform_size(Self::SIZE)),
+                flip_y: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    fn draw_playing_3d(&mut self) {
+        const TARGET: Vec3 = vec3(0., 0., 0.);
+        const POSITION: Vec3 = vec3(0., 2., 14.);
+        const BOWLING_CREASE_TO_END: f32 = 1.22;
+        const PITCH_WIDTH: f32 = 3.05;
+        const BOWLING_CREASE_TO_POPPING_CREASE: f32 = 1.22;
+        const STUMP_DIAMETER: f32 = 0.034;
+        const BETWEEN_STUMPS: f32 = 0.054;
+        const STUMP_HEIGHT: f32 = 0.71;
+        const BETWEEN_WICKETS: f32 = 20.12;
+        const POPPING_CREASE_LENGTH: f32 = 3.66;
+        const BOWLING_CREASE_LENGTH: f32 = 2.64;
+
+        const STUMP_DISTANCE: f32 = STUMP_DIAMETER + BETWEEN_STUMPS;
+        const PITCH_LENGTH: f32 = BETWEEN_WICKETS + 2. * BOWLING_CREASE_TO_END;
+
+        set_camera(&Camera3D {
+            aspect: Some(Self::SIZE.x / Self::SIZE.y),
+            target: TARGET,
+            position: POSITION,
+            up: Vec3::Y,
+            fovy: 60_f32.to_radians(),
+            projection: Projection::Perspective,
+            viewport: None,
+            render_target: Some(self.render_target.clone()),
+        });
+        clear_background(color_u8!(168, 228, 255, 255));
+        draw_plane(
+            Vec3::ZERO,
+            vec2(1000., 1000.),
+            None,
+            color_u8!(84, 148, 52, 255),
+        );
+        draw_plane(
+            Vec3::ZERO,
+            vec2(PITCH_WIDTH / 2., PITCH_LENGTH / 2.),
+            None,
+            color_u8!(255, 210, 138, 255),
+        );
+        for side in [-1., 1.] {
+            for stump in [-1., 0., 1.] {
+                draw_cylinder_wires(
+                    vec3(
+                        stump * STUMP_DISTANCE,
+                        STUMP_HEIGHT / 2.,
+                        side * BETWEEN_WICKETS / 2.,
+                    ),
+                    STUMP_DIAMETER / 2.,
+                    STUMP_DIAMETER / 2.,
+                    STUMP_HEIGHT,
+                    None,
+                    color_u8!(0, 0, 255, 255),
+                );
+            }
+
+            draw_line_3d(
+                vec3(
+                    -POPPING_CREASE_LENGTH / 2.,
+                    0.,
+                    side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                ),
+                vec3(
+                    POPPING_CREASE_LENGTH / 2.,
+                    0.,
+                    side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                ),
+                color_u8!(0, 255, 0, 255),
+            );
+            draw_line_3d(
+                vec3(
+                    -BOWLING_CREASE_LENGTH / 2.,
+                    0.,
+                    side * (BETWEEN_WICKETS / 2.),
+                ),
+                vec3(
+                    BOWLING_CREASE_LENGTH / 2.,
+                    0.,
+                    side * (BETWEEN_WICKETS / 2.),
+                ),
+                color_u8!(0, 255, 0, 255),
+            );
+            for return_crease in [-1., 1.] {
+                draw_line_3d(
+                    vec3(
+                        return_crease * BOWLING_CREASE_LENGTH / 2.,
+                        0.,
+                        side * (BETWEEN_WICKETS / 2. - BOWLING_CREASE_TO_POPPING_CREASE),
+                    ),
+                    vec3(
+                        return_crease * BOWLING_CREASE_LENGTH / 2.,
+                        0.,
+                        side * (BETWEEN_WICKETS / 2. + BOWLING_CREASE_TO_END),
+                    ),
+                    color_u8!(0, 255, 0, 255),
+                );
+            }
         }
     }
 
