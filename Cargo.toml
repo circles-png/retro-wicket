@@ -8,6 +8,7 @@ macroquad = "0.4.13"
 rand = "0.8.5"
 strum = { version = "0.26.3", features = ["derive"] }
 retro-wicket-macros = { path = "retro-wicket-macros" }
+rapier3d = { version = "0.22.0", features = ["simd-nightly"] }
 
 [workspace]
 members = ["retro-wicket-macros", "."]

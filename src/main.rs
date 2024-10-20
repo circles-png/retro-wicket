@@ -9,7 +9,9 @@ use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::{Color, WHITE};
 use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Rect, Vec3};
-use macroquad::models::{draw_cylinder_wires, draw_line_3d, draw_plane};
+use macroquad::miniquad::window::set_mouse_cursor;
+use macroquad::miniquad::CursorIcon;
+use macroquad::models::{draw_cylinder_wires, draw_line_3d, draw_plane, draw_sphere, draw_sphere_ex};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
@@ -334,23 +336,28 @@ impl<'n> Game<'n> {
         loop {
             set_default_camera();
             Self::draw_borders();
-            match &mut self.state {
+            set_mouse_cursor(match &mut self.state {
                 State::PickingSide => {
                     self.draw_picking_side();
+                    CursorIcon::Pointer
                 }
                 State::TossingCoin { .. } => {
                     self.draw_tossing_coin();
+                    CursorIcon::Pointer
                 }
                 State::FlippingCoin { .. } => {
                     self.draw_flipping_coin();
+                    CursorIcon::Pointer
                 }
                 State::ShowingCoinResult { .. } => {
                     self.draw_showing_coin_result();
+                    CursorIcon::Pointer
                 }
                 State::Playing { .. } => {
                     self.draw_playing();
+                    CursorIcon::Crosshair
                 }
-            }
+            });
             next_frame().await;
         }
     }
@@ -392,13 +399,15 @@ impl<'n> Game<'n> {
         const LINE_COLOUR: Color = colour!(White);
         const GRASS_COLOUR: Color = colour!(DarkGreen);
         const PITCH_COLOUR: Color = colour!(LightPeach);
+        const BALL_COLOUR: Color = colour!(Red);
+        const BALL_RADIUS: f32 = 0.036;
 
         set_camera(&Camera3D {
             aspect: Some(Self::SIZE.x / Self::SIZE.y),
             target: TARGET,
             position: POSITION,
             up: Vec3::Y,
-            fovy: 60_f32.to_radians(),
+            fovy: 30_f32.to_radians(),
             projection: Projection::Perspective,
             viewport: None,
             render_target: Some(self.render_target.clone()),
@@ -469,6 +478,8 @@ impl<'n> Game<'n> {
                 );
             }
         }
+
+        draw_sphere(Vec3::Y * 2., BALL_RADIUS, None, BALL_COLOUR);
     }
 
     fn draw_showing_coin_result(&mut self) {
@@ -786,11 +797,11 @@ impl<'n> Game<'n> {
         })
     }
 
-    const BACKGROUND_COLOUR: Color = colour!(LightPeach);
+    const BACKGROUND_COLOUR: Color = colour!(LightGrey);
 
     const HEADING_TEXT_SIZE: u16 = 10;
     const TEXT_SIZE: u16 = 5;
-    const HIGHLIGHT_COLOUR: Color = colour!(Yellow);
+    const HIGHLIGHT_COLOUR: Color = colour!(LightPeach);
 
     fn draw_picking_side(&mut self) {
         const GAP: f32 = 80.;
