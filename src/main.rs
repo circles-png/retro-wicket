@@ -11,9 +11,7 @@ use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
-use macroquad::models::{
-    draw_cylinder, draw_line_3d, draw_plane, draw_sphere,
-};
+use macroquad::models::{draw_cylinder, draw_line_3d, draw_plane, draw_sphere};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::time::get_frame_time;
 use macroquad::ui::{Style, Ui};
@@ -37,6 +35,7 @@ use rapier3d::prelude::{
     QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
 };
 use retro_wicket_macros::{hex, include_textures};
+use std::f32::consts::PI;
 use std::time::Instant;
 use std::{
     cmp::Ordering,
@@ -145,8 +144,9 @@ enum State<'n> {
 }
 
 impl<'n> State<'n> {
-    const fn start() -> Self {
-        Self::PickingSide
+    fn start() -> Self {
+        // TODO remove this
+        Game::init_playing_state(Teams::new(["You", "Opponent"]))
     }
 }
 
@@ -297,6 +297,19 @@ macro_rules! colour {
     };
 }
 
+fn random_in_unit_sphere() -> Vec3 {
+    let (x1, x2) = box_muller();
+    let (x3, _) = box_muller();
+    random::<f32>().cbrt() / f32::sqrt(x3.mul_add(x3, x1.mul_add(x1, x2.powi(2))))
+        * vec3(x1, x2, x3)
+}
+
+fn box_muller() -> (f32, f32) {
+    let r = f32::sqrt(-2. * f32::ln(random()));
+    let theta = 2. * PI * random::<f32>();
+    (r * f32::cos(theta), r * f32::sin(theta))
+}
+
 impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
@@ -408,7 +421,7 @@ impl<'n> Game<'n> {
 
     const BALL_RADIUS: f32 = 0.036;
     const TARGET: Vec3 = vec3(0., 0., 0.);
-    const POSITION: Vec3 = vec3(0., 5., 20.);
+    const POSITION: Vec3 = vec3(0., 2., 20.);
     const BOWLING_CREASE_TO_END: f32 = 1.22;
     const PITCH_WIDTH: f32 = 3.05;
     const BOWLING_CREASE_TO_POPPING_CREASE: f32 = 1.22;
@@ -660,8 +673,14 @@ impl<'n> Game<'n> {
                 .position(vector![0., -1., 0.].into())
                 .build(),
         );
+        let ball_start = vector![
+            0.5,
+            2.4,
+            Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
+        ] + Vector3::from(random_in_unit_sphere()) * 0.2;
+
         let ball_rigidbody_handle =
-            bodies.insert(RigidBodyBuilder::dynamic().translation(vector![0., 2., 0.]));
+            bodies.insert(RigidBodyBuilder::dynamic().translation(ball_start));
         colliders.insert_with_parent(
             ColliderBuilder::ball(Self::BALL_RADIUS)
                 .restitution(1.)
