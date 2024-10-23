@@ -8,10 +8,10 @@
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::{Color, WHITE};
 use macroquad::input::is_mouse_button_pressed;
-use macroquad::math::{vec3, Rect, Vec3};
+use macroquad::math::{vec3, Quat, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
-use macroquad::models::{draw_cylinder, draw_line_3d, draw_plane, draw_sphere};
+use macroquad::models::{draw_cube, draw_cylinder, draw_line_3d, draw_plane, draw_sphere};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::time::get_frame_time;
 use macroquad::ui::{Style, Ui};
@@ -516,6 +516,19 @@ impl<'n> Game<'n> {
             None,
             Self::BALL_COLOUR,
         );
+        let batter_size = 2.;
+        draw_cube(
+            vec3(
+                0.,
+                batter_size / 2.,
+                Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
+            ),
+            vec3(batter_size, batter_size, batter_size),
+            Some(&include_textures!("batter", 1..=1)[0]),
+            WHITE,
+        );
+
+        *camera_position = Quat::from_axis_angle(Vec3::Y, 0.1 * get_frame_time) * *camera_position;
     }
 
     fn draw_lines() {
