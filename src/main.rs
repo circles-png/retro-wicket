@@ -11,7 +11,10 @@ use macroquad::input::is_mouse_button_pressed;
 use macroquad::math::{vec3, Quat, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
-use macroquad::models::{draw_cube, draw_cylinder, draw_line_3d, draw_plane, draw_sphere};
+use macroquad::models::{
+    self, draw_affine_parallelogram, draw_cube, draw_cylinder, draw_line_3d, draw_plane,
+    draw_sphere,
+};
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::time::get_frame_time;
 use macroquad::ui::{Style, Ui};
@@ -483,7 +486,19 @@ impl<'n> Game<'n> {
             None,
             Self::PITCH_COLOUR,
         );
-        Self::draw_lines();
+        let batter_size = 2.;
+        draw_affine_parallelogram(
+            vec3(
+                -batter_size / 2.,
+                batter_size,
+                Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
+            ),
+            Vec3::NEG_Y * batter_size,
+            Vec3::X * batter_size,
+            Some(&include_textures!("batter", 1..=1)[0]),
+            WHITE,
+        );
+        Self::draw_sides();
 
         let get_frame_time = get_frame_time();
         integration_parameters.dt = get_frame_time;
@@ -516,22 +531,10 @@ impl<'n> Game<'n> {
             None,
             Self::BALL_COLOUR,
         );
-        let batter_size = 2.;
-        draw_cube(
-            vec3(
-                0.,
-                batter_size / 2.,
-                Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
-            ),
-            vec3(batter_size, batter_size, batter_size),
-            Some(&include_textures!("batter", 1..=1)[0]),
-            WHITE,
-        );
-
         *camera_position = Quat::from_axis_angle(Vec3::Y, 0.1 * get_frame_time) * *camera_position;
     }
 
-    fn draw_lines() {
+    fn draw_sides() {
         for side in [-1., 1.] {
             for stump in [-1., 0., 1.] {
                 draw_cylinder(
