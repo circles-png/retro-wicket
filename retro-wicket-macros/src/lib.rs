@@ -1,6 +1,18 @@
 #![feature(proc_macro_expand)]
+use itertools::Itertools;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_until, take_while},
+    combinator::{all_consuming, eof, not, opt, rest},
+    error::Error as NomError,
+    multi::many1,
+    sequence::{preceded, tuple},
+    Parser,
+};
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use std::{collections::HashMap, hash::Hash, str::FromStr};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input, Error, Expr, ExprRange, LitStr, Token,
@@ -69,7 +81,7 @@ pub fn include_textures(input: TokenStream) -> TokenStream {
         start,
         end_inclusive,
     } = parse_macro_input!(input as Input);
-    let tokens: proc_macro2::TokenStream = (start..=end_inclusive)
+    let tokens: TokenStream2 = (start..=end_inclusive)
         .map(|suffix| {
             let name = format!("{name}{suffix}");
             quote! {
@@ -90,7 +102,7 @@ pub fn hex(input: TokenStream) -> TokenStream {
         .map_or_else(
             || {
                 Error::new_spanned(
-                    proc_macro2::TokenStream::from(input),
+                    TokenStream2::from(input),
                     "expected a 6 digit hexadecimal number without a #",
                 )
                 .to_compile_error()
@@ -103,4 +115,55 @@ pub fn hex(input: TokenStream) -> TokenStream {
             },
         )
         .into()
+}
+
+#[proc_macro]
+pub fn poly(input: TokenStream) -> TokenStream {
+    fn inner(input: &TokenStream) -> Option<TokenStream> {
+        let input = input.to_string().replace(' ', "");
+        let coefficient = preceded(
+            not(eof),
+            alt((take_until("x"), rest::<&str, NomError<_>>))
+                .map(f32::from_str)
+                .map(Result::ok)
+                .map(|coefficient| coefficient.unwrap_or(1.)),
+        );
+        let term = tuple((
+            coefficient,
+            opt(preceded(
+                tag("x"),
+                opt(preceded(
+                    tag("^"),
+                    take_while(|char: char| char.is_ascii_digit())
+                        .map(u32::from_str)
+                        .map(Result::ok),
+                ))
+                .map(Option::flatten)
+                .map(|exponent| exponent.unwrap_or(1)),
+            ))
+            .map(|exponent| exponent.unwrap_or(0)),
+        ))
+        .map(|(coefficient, exponent)| (exponent, coefficient));
+        let mut polynomial = all_consuming(preceded(tag("y="), many1(term)));
+        let terms = polynomial(&input)
+            .ok()?
+            .1
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        let terms = (0..=terms.keys().max().copied()?)
+            .map(|exponent| terms.get(&exponent).unwrap_or(&0.))
+            .rev()
+            .collect_vec();
+        Some(
+            quote! {
+                Polynomial([#( #terms ),*])
+            }
+            .into(),
+        )
+    }
+    inner(&input).unwrap_or_else(|| {
+        Error::new_spanned(TokenStream2::from(input), "expected a valid polynomial")
+            .to_compile_error()
+            .into()
+    })
 }

@@ -1,3 +1,4 @@
+#![feature(fn_traits, unboxed_closures)]
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_lossless,
@@ -7,16 +8,17 @@
 
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
 use macroquad::color::{Color, WHITE};
-use macroquad::input::is_mouse_button_pressed;
+use macroquad::input::{
+    is_mouse_button_pressed, mouse_delta_position, set_cursor_grab, show_mouse,
+};
 use macroquad::math::{vec3, Quat, Rect, Vec3};
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
 use macroquad::models::{
-    self, draw_affine_parallelogram, draw_cube, draw_cylinder, draw_line_3d, draw_plane,
-    draw_sphere,
+    draw_affine_parallelogram, draw_cylinder, draw_line_3d, draw_plane, draw_sphere,
 };
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
-use macroquad::time::get_frame_time;
+use macroquad::time::{get_fps, get_frame_time, get_time};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
     input::{is_mouse_button_released, mouse_position_local, MouseButton},
@@ -37,9 +39,10 @@ use rapier3d::prelude::{
     IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
     QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
 };
-use retro_wicket_macros::{hex, include_textures};
+use retro_wicket_macros::{hex, include_textures, poly};
 use std::f32::consts::PI;
-use std::time::Instant;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -127,26 +130,56 @@ enum State<'n> {
         innings: usize,
         teams: Teams<'n>,
 
+        start: f32,
+
+        batting_direction: f32,
+        ball_thrown: bool,
+
         camera_target: Vec3,
         camera_position: Vec3,
 
-        bodies: RigidBodySet,
-        colliders: ColliderSet,
-        gravity: Vector3<f32>,
-        integration_parameters: IntegrationParameters,
-        physics_pipeline: PhysicsPipeline,
-        islands: IslandManager,
-        broad_phase: DefaultBroadPhase,
-        narrow_phase: NarrowPhase,
-        impulse_joints: ImpulseJointSet,
-        multibody_joints: MultibodyJointSet,
-        ccd_solver: CCDSolver,
-        query_pipeline: QueryPipeline,
+        physics_stuff: PhysicsStuff,
         ball_rigidbody_handle: RigidBodyHandle,
     },
 }
 
-impl<'n> State<'n> {
+struct PhysicsStuff {
+    bodies: RigidBodySet,
+    colliders: ColliderSet,
+    gravity: Vector3<f32>,
+    integration_parameters: IntegrationParameters,
+    physics_pipeline: PhysicsPipeline,
+    islands: IslandManager,
+    broad_phase: DefaultBroadPhase,
+    narrow_phase: NarrowPhase,
+    impulse_joints: ImpulseJointSet,
+    multibody_joints: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    query_pipeline: QueryPipeline,
+}
+
+impl PhysicsStuff {
+    fn step(&mut self, delta_time: f32) {
+        self.integration_parameters.dt = delta_time;
+        self.physics_pipeline.step(
+            &self.gravity,
+            &self.integration_parameters,
+            &mut self.islands,
+            &mut self.broad_phase,
+            &mut self.narrow_phase,
+            &mut self.bodies,
+            &mut self.colliders,
+            &mut self.impulse_joints,
+            &mut self.multibody_joints,
+            &mut self.ccd_solver,
+            Some(&mut self.query_pipeline),
+            &(),
+            &(),
+        );
+    }
+}
+
+impl State<'_> {
     fn start() -> Self {
         // TODO remove this
         Game::init_playing_state(Teams::new(["You", "Opponent"]))
@@ -313,11 +346,46 @@ fn box_muller() -> (f32, f32) {
     (r * f32::cos(theta), r * f32::sin(theta))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Polynomial<const N: usize>([f32; N]);
+
+impl<const N: usize> Polynomial<N> {
+    fn evaluate(self, x: f32) -> f32 {
+        self.0
+            .into_iter()
+            .rev()
+            .enumerate()
+            .fold(0., |acc, (index, coefficient)| {
+                coefficient.mul_add(x.powf(index as f32), acc)
+            })
+    }
+}
+
+impl<const N: usize> FnOnce<(f32,)> for Polynomial<N> {
+    type Output = f32;
+
+    extern "rust-call" fn call_once(self, args: (f32,)) -> Self::Output {
+        self.evaluate(args.0)
+    }
+}
+
+impl<const N: usize> FnMut<(f32,)> for Polynomial<N> {
+    extern "rust-call" fn call_mut(&mut self, args: (f32,)) -> Self::Output {
+        self.evaluate(args.0)
+    }
+}
+
+impl<const N: usize> Fn<(f32,)> for Polynomial<N> {
+    extern "rust-call" fn call(&self, args: (f32,)) -> Self::Output {
+        self.evaluate(args.0)
+    }
+}
+
 impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
-        let render_target = render_target(Self::SIZE.x as u32, Self::SIZE.y as u32);
+        let render_target = render_target(Self::SIZE.x as u32 * 4, Self::SIZE.y as u32 * 4);
         render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
@@ -423,8 +491,10 @@ impl<'n> Game<'n> {
     }
 
     const BALL_RADIUS: f32 = 0.036;
+
     const TARGET: Vec3 = vec3(0., 0., 0.);
     const POSITION: Vec3 = vec3(0., 2., 20.);
+
     const BOWLING_CREASE_TO_END: f32 = 1.22;
     const PITCH_WIDTH: f32 = 3.05;
     const BOWLING_CREASE_TO_POPPING_CREASE: f32 = 1.22;
@@ -442,26 +512,22 @@ impl<'n> Game<'n> {
     const GRASS_COLOUR: Color = colour!(DarkGreen);
     const PITCH_COLOUR: Color = colour!(LightPeach);
     const BALL_COLOUR: Color = colour!(Red);
+
+    const BALL_DELAY: f32 = 3.;
     fn draw_playing_to_render_texture(&mut self) {
         let State::Playing {
             innings,
             teams,
 
+            start,
+
+            batting_direction,
+            ball_thrown,
+
             camera_position,
             camera_target,
 
-            bodies,
-            colliders,
-            gravity,
-            integration_parameters,
-            physics_pipeline,
-            islands,
-            broad_phase,
-            narrow_phase,
-            impulse_joints,
-            multibody_joints,
-            ccd_solver,
-            query_pipeline,
+            physics_stuff,
             ball_rigidbody_handle: ball_body_handle,
         } = &mut self.state
         else {
@@ -487,6 +553,9 @@ impl<'n> Game<'n> {
             Self::PITCH_COLOUR,
         );
         let batter_size = 2.;
+        let textures = include_textures!("batter", 1..=2);
+        Self::draw_sides();
+        Self::draw_stumps();
         draw_affine_parallelogram(
             vec3(
                 -batter_size / 2.,
@@ -495,62 +564,60 @@ impl<'n> Game<'n> {
             ),
             Vec3::NEG_Y * batter_size,
             Vec3::X * batter_size,
-            Some(&include_textures!("batter", 1..=1)[0]),
+            Some(&textures[((get_time() * 2.) as usize) % textures.len()]),
             WHITE,
         );
-        Self::draw_sides();
 
         let get_frame_time = get_frame_time();
-        integration_parameters.dt = get_frame_time;
-        physics_pipeline.step(
-            gravity,
-            integration_parameters,
-            islands,
-            broad_phase,
-            narrow_phase,
-            bodies,
-            colliders,
-            impulse_joints,
-            multibody_joints,
-            ccd_solver,
-            Some(query_pipeline),
-            &(),
-            &(),
+        physics_stuff.step(get_frame_time);
+        let ball_body = &mut physics_stuff.bodies[*ball_body_handle];
+        Self::draw_ball((*ball_body.translation()).into());
+        if get_time() as f32 - *start > Self::BALL_DELAY && !*ball_thrown {
+            ball_body.set_enabled(true);
+            ball_body.add_force(vector![0., 0., 2.], true);
+            *ball_thrown = true;
+        }
+        let delta = mouse_delta_position() * Self::DELTA_MULTIPLIER;
+        *batting_direction += delta.x;
+        *batting_direction = batting_direction.clamp(
+            -Self::BATTING_DIRECTION_LIMIT,
+            Self::BATTING_DIRECTION_LIMIT,
         );
-
-        let ball_body = &bodies[*ball_body_handle];
-        draw_sphere(
-            (*ball_body.translation()).into(),
-            Self::BALL_RADIUS + 0.01,
-            None,
-            colour!(Black),
+        let start = vec3(
+            0.,
+            0.,
+            Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
         );
-        draw_sphere(
-            (*ball_body.translation()).into(),
-            Self::BALL_RADIUS,
-            None,
-            Self::BALL_COLOUR,
+        draw_line_3d(
+            start,
+            start + Quat::from_axis_angle(Vec3::Y, *batting_direction) * Vec3::NEG_Z,
+            colour!(Red),
         );
-        *camera_position = Quat::from_axis_angle(Vec3::Y, 0.1 * get_frame_time) * *camera_position;
+        show_mouse(false);
+        set_cursor_grab(true);
+        let speed = delta.y / get_frame_time;
+        if speed > Self::BATTING_SPEED_THRESHOLD {
+            let direction = Quat::from_axis_angle(Vec3::Y, *batting_direction) * Vec3::NEG_Z;
+            let velocity = direction * speed;
+            let delta_velocity = velocity - Vec3::from(*ball_body.linvel());
+            let distance_error = f32::abs(start.z - ball_body.translation().z);
+            let delta_velocity = delta_velocity
+                * Self::DISTANCE_ERROR_TO_VELOCITY_MULTIPLIER(distance_error).clamp(0., 1.);
+            ball_body.set_linvel(
+                dbg!(ball_body.linvel() + Vector3::from(delta_velocity)),
+                true,
+            );
+        }
     }
+
+    const DISTANCE_ERROR_TO_VELOCITY_MULTIPLIER: Polynomial<4> =
+        poly!(y = -0.646388x ^ 3 + 1.91648x ^ 2 - 2.08701x + 1);
+    const BATTING_SPEED_THRESHOLD: f32 = 5.;
+    const BATTING_DIRECTION_LIMIT: f32 = 2.5;
+    const DELTA_MULTIPLIER: Vec2 = vec2(0.2, 0.01);
 
     fn draw_sides() {
         for side in [-1., 1.] {
-            for stump in [-1., 0., 1.] {
-                draw_cylinder(
-                    vec3(
-                        stump * Self::STUMP_DISTANCE,
-                        0.,
-                        side * Self::BETWEEN_WICKETS / 2.,
-                    ),
-                    Self::STUMP_DIAMETER / 2.,
-                    Self::STUMP_DIAMETER / 2.,
-                    Self::STUMP_HEIGHT,
-                    None,
-                    Self::LINE_COLOUR,
-                );
-            }
-
             draw_line_3d(
                 vec3(
                     -Self::POPPING_CREASE_LENGTH / 2.,
@@ -692,7 +759,7 @@ impl<'n> Game<'n> {
         let ball_start = vector![
             0.5,
             2.4,
-            Game::BETWEEN_WICKETS / 2. - Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
+            -Game::BETWEEN_WICKETS / 2. + Game::BOWLING_CREASE_TO_POPPING_CREASE / 2.,
         ] + Vector3::from(random_in_unit_sphere()) * 0.2;
 
         let ball_rigidbody_handle =
@@ -705,7 +772,7 @@ impl<'n> Game<'n> {
             ball_rigidbody_handle,
             &mut bodies,
         );
-        bodies[ball_rigidbody_handle].add_force(vector![0., 0., 1.], true);
+        bodies[ball_rigidbody_handle].set_enabled(false);
 
         let gravity = vector![0., -9.81, 0.];
         let integration_parameters = IntegrationParameters::default();
@@ -722,21 +789,28 @@ impl<'n> Game<'n> {
             innings: 0,
             teams,
 
+            start: get_time() as f32,
+
+            batting_direction: 0.,
+            ball_thrown: false,
+
             camera_position: Self::POSITION,
             camera_target: Self::TARGET,
 
-            bodies,
-            colliders,
-            gravity,
-            integration_parameters,
-            physics_pipeline,
-            islands: island_manager,
-            broad_phase,
-            narrow_phase,
-            impulse_joints,
-            multibody_joints,
-            ccd_solver,
-            query_pipeline,
+            physics_stuff: PhysicsStuff {
+                bodies,
+                colliders,
+                gravity,
+                integration_parameters,
+                physics_pipeline,
+                islands: island_manager,
+                broad_phase,
+                narrow_phase,
+                impulse_joints,
+                multibody_joints,
+                ccd_solver,
+                query_pipeline,
+            },
             ball_rigidbody_handle,
         }
     }
@@ -1042,6 +1116,30 @@ impl<'n> Game<'n> {
             }
         });
     }
+
+    fn draw_stumps() {
+        for side in [-1., 1.] {
+            for stump in [-1., 0., 1.] {
+                draw_cylinder(
+                    vec3(
+                        stump * Self::STUMP_DISTANCE,
+                        0.,
+                        side * Self::BETWEEN_WICKETS / 2.,
+                    ),
+                    Self::STUMP_DIAMETER / 2.,
+                    Self::STUMP_DIAMETER / 2.,
+                    Self::STUMP_HEIGHT,
+                    None,
+                    Self::LINE_COLOUR,
+                );
+            }
+        }
+    }
+
+    fn draw_ball(position: Vec3) {
+        draw_sphere(position, Self::BALL_RADIUS + 0.01, None, colour!(Black));
+        draw_sphere(position, Self::BALL_RADIUS, None, Self::BALL_COLOUR);
+    }
 }
 
 impl<'n> Deref for Game<'n> {
@@ -1051,7 +1149,7 @@ impl<'n> Deref for Game<'n> {
     }
 }
 
-impl<'n> DerefMut for Game<'n> {
+impl DerefMut for Game<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.state
     }
