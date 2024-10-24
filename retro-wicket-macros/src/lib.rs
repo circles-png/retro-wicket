@@ -10,14 +10,15 @@ use nom::{
     Parser,
 };
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
-use std::{collections::HashMap, hash::Hash, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Error, Expr, ExprRange, LitStr, Token,
+    parse_macro_input, Error, Expr, ExprRange, Ident, LitStr, Token,
 };
 use syn::{ExprLit, Lit, LitInt};
+use urlencoding::encode;
 
 #[proc_macro]
 pub fn include_textures(input: TokenStream) -> TokenStream {
@@ -121,39 +122,7 @@ pub fn hex(input: TokenStream) -> TokenStream {
 pub fn poly(input: TokenStream) -> TokenStream {
     fn inner(input: &TokenStream) -> Option<TokenStream> {
         let input = input.to_string().replace(' ', "");
-        let coefficient = preceded(
-            not(eof),
-            alt((take_until("x"), rest::<&str, NomError<_>>))
-                .map(f32::from_str)
-                .map(Result::ok)
-                .map(|coefficient| coefficient.unwrap_or(1.)),
-        );
-        let term = tuple((
-            coefficient,
-            opt(preceded(
-                tag("x"),
-                opt(preceded(
-                    tag("^"),
-                    take_while(|char: char| char.is_ascii_digit())
-                        .map(u32::from_str)
-                        .map(Result::ok),
-                ))
-                .map(Option::flatten)
-                .map(|exponent| exponent.unwrap_or(1)),
-            ))
-            .map(|exponent| exponent.unwrap_or(0)),
-        ))
-        .map(|(coefficient, exponent)| (exponent, coefficient));
-        let mut polynomial = all_consuming(preceded(tag("y="), many1(term)));
-        let terms = polynomial(&input)
-            .ok()?
-            .1
-            .into_iter()
-            .collect::<HashMap<_, _>>();
-        let terms = (0..=terms.keys().max().copied()?)
-            .map(|exponent| terms.get(&exponent).unwrap_or(&0.))
-            .rev()
-            .collect_vec();
+        let terms = terms(&input)?;
         Some(
             quote! {
                 Polynomial([#( #terms ),*])
@@ -166,4 +135,102 @@ pub fn poly(input: TokenStream) -> TokenStream {
             .to_compile_error()
             .into()
     })
+}
+
+fn terms(input: &str) -> Option<Vec<f32>> {
+    let coefficient = preceded(
+        not(eof),
+        alt((take_until("x"), rest::<&str, NomError<_>>))
+            .map(f32::from_str)
+            .map(Result::ok)
+            .map(|coefficient| coefficient.unwrap_or(1.)),
+    );
+    let term = tuple((
+        coefficient,
+        opt(preceded(
+            tag("x"),
+            opt(preceded(
+                tag("^"),
+                take_while(|char: char| char.is_ascii_digit())
+                    .map(u32::from_str)
+                    .map(Result::ok),
+            ))
+            .map(Option::flatten)
+            .map(|exponent| exponent.unwrap_or(1)),
+        ))
+        .map(|exponent| exponent.unwrap_or(0)),
+    ))
+    .map(|(coefficient, exponent)| (exponent, coefficient));
+    let mut polynomial = all_consuming(preceded(tag("y="), many1(term)));
+    let terms = polynomial(input)
+        .ok()?
+        .1
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+    let terms = (0..=terms.keys().max().copied()?)
+        .map(|exponent| terms.get(&exponent).unwrap_or(&0.))
+        .rev()
+        .copied()
+        .collect_vec();
+    Some(terms)
+}
+
+#[proc_macro]
+pub fn poly_consts(input: TokenStream) -> TokenStream {
+    struct Input(Vec<Const>);
+    #[derive(Debug)]
+    struct Const {
+        name: String,
+        terms: Vec<f32>,
+    }
+
+    impl Parse for Input {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let consts = input.parse_terminated(Const::parse, Token![;])?;
+            Ok(Self(consts.into_iter().collect()))
+        }
+    }
+
+    impl Parse for Const {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let _const: Token![const] = input.parse()?;
+            let name: Ident = input.parse()?;
+            let _arrow: Token![=>] = input.parse()?;
+            let tokens: TokenStream2 = input.parse()?;
+            Ok(Self {
+                name: name.to_string(),
+                terms: terms(&tokens.to_string().replace(' ', ""))
+                    .ok_or_else(|| Error::new_spanned(tokens, "expected a valid polynomial"))?,
+            })
+        }
+    }
+
+    let Input(consts) = parse_macro_input!(input as Input);
+    let consts = consts
+        .into_iter()
+        .map(|Const { name, terms }| {
+            let len = terms.len();
+            let name = Ident::new(&name, Span::call_site());
+            let string = terms
+                .iter()
+                .rev()
+                .enumerate()
+                .rev()
+                .map(|(exponent, coefficient)| format!("{coefficient}x^{exponent}"))
+                .join("+");
+            let doc = format!(
+                "Polynomial `{}`. [View in GeoGebra](https://geogebra.org/classic?command=y={})",
+                &string,
+                encode(&string)
+            );
+            quote! {
+                #[doc = #doc]
+                const #name: Polynomial<#len> = Polynomial([#( #terms ),*]);
+            }
+        })
+        .collect_vec();
+    quote! {
+        #(#consts)*
+    }
+    .into()
 }

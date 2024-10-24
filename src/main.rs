@@ -18,7 +18,7 @@ use macroquad::models::{
     draw_affine_parallelogram, draw_cylinder, draw_line_3d, draw_plane, draw_sphere,
 };
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
-use macroquad::time::{get_fps, get_frame_time, get_time};
+use macroquad::time::{get_frame_time, get_time};
 use macroquad::ui::{Style, Ui};
 use macroquad::{
     input::{is_mouse_button_released, mouse_position_local, MouseButton},
@@ -39,10 +39,9 @@ use rapier3d::prelude::{
     IntegrationParameters, IslandManager, MultibodyJointSet, NarrowPhase, PhysicsPipeline,
     QueryPipeline, RigidBodyBuilder, RigidBodyHandle, RigidBodySet,
 };
-use retro_wicket_macros::{hex, include_textures, poly};
+use retro_wicket_macros::{hex, include_textures, poly, poly_consts};
 use std::f32::consts::PI;
-use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -610,11 +609,12 @@ impl<'n> Game<'n> {
         }
     }
 
-    const DISTANCE_ERROR_TO_VELOCITY_MULTIPLIER: Polynomial<4> =
-        poly!(y = -0.646388x ^ 3 + 1.91648x ^ 2 - 2.08701x + 1);
+    poly_consts! {
+        const DISTANCE_ERROR_TO_VELOCITY_MULTIPLIER => y = -0.646388x ^ 3 + 1.91648x ^ 2 - 2.08701x + 1;
+    }
     const BATTING_SPEED_THRESHOLD: f32 = 5.;
     const BATTING_DIRECTION_LIMIT: f32 = 2.5;
-    const DELTA_MULTIPLIER: Vec2 = vec2(0.2, 0.01);
+    const DELTA_MULTIPLIER: Vec2 = vec2(0.2, 0.05);
 
     fn draw_sides() {
         for side in [-1., 1.] {
