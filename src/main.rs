@@ -133,6 +133,7 @@ enum State<'n> {
 
         batting_direction: f32,
         ball_thrown: bool,
+        ball_hit: bool,
 
         camera_target: Vec3,
         camera_position: Vec3,
@@ -492,7 +493,7 @@ impl<'n> Game<'n> {
     const BALL_RADIUS: f32 = 0.036;
 
     const TARGET: Vec3 = vec3(0., 0., 0.);
-    const POSITION: Vec3 = vec3(0., 2., 20.);
+    const POSITION: Vec3 = vec3(0., 10., 30.);
 
     const BOWLING_CREASE_TO_END: f32 = 1.22;
     const PITCH_WIDTH: f32 = 3.05;
@@ -522,6 +523,7 @@ impl<'n> Game<'n> {
 
             batting_direction,
             ball_thrown,
+            ball_hit,
 
             camera_position,
             camera_target,
@@ -595,7 +597,7 @@ impl<'n> Game<'n> {
         show_mouse(false);
         set_cursor_grab(true);
         let speed = delta.y / get_frame_time;
-        if speed > Self::BATTING_SPEED_THRESHOLD {
+        if speed > Self::BATTING_SPEED_THRESHOLD && !*ball_hit {
             let direction = Quat::from_axis_angle(Vec3::Y, *batting_direction) * Vec3::NEG_Z;
             let velocity = direction * speed;
             let delta_velocity = velocity - Vec3::from(*ball_body.linvel());
@@ -606,6 +608,7 @@ impl<'n> Game<'n> {
                 dbg!(ball_body.linvel() + Vector3::from(delta_velocity)),
                 true,
             );
+            *ball_hit = true;
         }
     }
 
@@ -793,6 +796,7 @@ impl<'n> Game<'n> {
 
             batting_direction: 0.,
             ball_thrown: false,
+            ball_hit: false,
 
             camera_position: Self::POSITION,
             camera_target: Self::TARGET,
