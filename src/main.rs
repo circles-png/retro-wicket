@@ -7,7 +7,7 @@
 )]
 
 use macroquad::camera::{set_camera, set_default_camera, Camera3D, Projection};
-use macroquad::color::{Color, WHITE};
+use macroquad::color::{Color, BLACK, WHITE};
 use macroquad::input::{
     is_mouse_button_pressed, mouse_delta_position, set_cursor_grab, show_mouse,
 };
@@ -303,43 +303,43 @@ impl ScreenSide {
 
 #[allow(unused)]
 enum Colour {
-    Black,
-    DarkBlue,
-    DarkPurple,
-    DarkGreen,
-    Brown,
-    DarkGrey,
-    LightGrey,
+    Birch,
+    Oak,
+    Pine,
+    Darkbark,
+    Blood,
+    Fabric,
+    Candle,
+    Glow,
+    Flora,
+    Moss,
+    Mold,
+    Iron,
+    Aluminiu,
     White,
-    Red,
-    Orange,
-    Yellow,
-    Green,
-    Blue,
-    Lavender,
-    Pink,
-    LightPeach,
+    Ion,
+    Archaeon,
 }
 
 impl Colour {
     const fn colour(self) -> Color {
         match self {
-            Self::Black => hex!(000000),
-            Self::DarkBlue => hex!(1D2B53),
-            Self::DarkPurple => hex!(7E2553),
-            Self::DarkGreen => hex!(008751),
-            Self::Brown => hex!(AB5236),
-            Self::DarkGrey => hex!(5F574F),
-            Self::LightGrey => hex!(C2C3C7),
-            Self::White => hex!(FFF1E8),
-            Self::Red => hex!(FF004D),
-            Self::Orange => hex!(FFA300),
-            Self::Yellow => hex!(FFEC27),
-            Self::Green => hex!(00E436),
-            Self::Blue => hex!(29ADFF),
-            Self::Lavender => hex!(83769C),
-            Self::Pink => hex!(FF77A8),
-            Self::LightPeach => hex!(FFCCAA),
+            Self::Birch => hex!(e4a672),
+            Self::Oak => hex!(b86f50),
+            Self::Pine => hex!(743f39),
+            Self::Darkbark => hex!(3f2832),
+            Self::Blood => hex!(9e2835),
+            Self::Fabric => hex!(e53b44),
+            Self::Candle => hex!(fb922b),
+            Self::Glow => hex!(ffe762),
+            Self::Flora => hex!(63c64d),
+            Self::Moss => hex!(327345),
+            Self::Mold => hex!(193d3f),
+            Self::Iron => hex!(4f6781),
+            Self::Aluminiu => hex!(afbfd2),
+            Self::White => hex!(ffffff),
+            Self::Ion => hex!(2ce8f4),
+            Self::Archaeon => hex!(0484d1),
         }
     }
 }
@@ -402,7 +402,7 @@ impl<'n> Game<'n> {
     fn new() -> Self {
         let font_data = include_bytes!("fonts/Quinque Five Font.ttf");
         let font = load_ttf_font_from_bytes(font_data).unwrap();
-        let render_target = render_target(Self::SIZE.x as u32 * 4, Self::SIZE.y as u32 * 4);
+        let render_target = render_target(Self::SIZE.x as u32, Self::SIZE.y as u32);
         render_target.texture.set_filter(FilterMode::Nearest);
         Self {
             state: State::start(),
@@ -416,21 +416,21 @@ impl<'n> Game<'n> {
         let size_pixels = Self::transform_size(Self::SIZE);
         let position = Self::transform_point(Vec2::ZERO);
 
-        draw_rectangle(0., 0., position.x, size_pixels.y, colour!(Black));
+        draw_rectangle(0., 0., position.x, size_pixels.y, BLACK);
         draw_rectangle(
             position.x + size_pixels.x,
             0.,
             position.x,
             size_pixels.y,
-            colour!(Black),
+            BLACK,
         );
-        draw_rectangle(0., 0., size_pixels.x, position.y, colour!(Black));
+        draw_rectangle(0., 0., size_pixels.x, position.y, BLACK);
         draw_rectangle(
             0.,
             position.y + size_pixels.y,
             size_pixels.x,
             position.y,
-            colour!(Black),
+            BLACK,
         );
     }
 
@@ -526,9 +526,9 @@ impl<'n> Game<'n> {
     const PITCH_LENGTH: f32 = Self::BETWEEN_WICKETS + 2. * Self::BOWLING_CREASE_TO_END;
 
     const LINE_COLOUR: Color = colour!(White);
-    const GRASS_COLOUR: Color = colour!(DarkGreen);
-    const PITCH_COLOUR: Color = colour!(LightPeach);
-    const BALL_COLOUR: Color = colour!(Red);
+    const GRASS_COLOUR: Color = colour!(Flora);
+    const PITCH_COLOUR: Color = colour!(Birch);
+    const BALL_COLOUR: Color = colour!(Fabric);
 
     const BALL_DELAY: f32 = 3.;
     fn draw_playing_to_render_texture(&mut self) {
@@ -562,7 +562,7 @@ impl<'n> Game<'n> {
             viewport: None,
             render_target: Some(self.render_target.clone()),
         });
-        clear_background(colour!(Blue));
+        clear_background(colour!(Ion));
         draw_plane(Vec3::ZERO, vec2(1000., 1000.), None, Self::GRASS_COLOUR);
         draw_plane(
             Vec3::ZERO,
@@ -609,7 +609,7 @@ impl<'n> Game<'n> {
         draw_line_3d(
             start,
             start + Quat::from_axis_angle(Vec3::Y, *batting_direction) * Vec3::NEG_Z,
-            colour!(Red),
+            colour!(Fabric),
         );
         show_mouse(false);
         set_cursor_grab(true);
@@ -1060,7 +1060,7 @@ impl<'n> Game<'n> {
 
     const HEADING_TEXT_SIZE: u16 = 10;
     const TEXT_SIZE: u16 = 5;
-    const HIGHLIGHT_COLOUR: Color = colour!(LightPeach);
+    const HIGHLIGHT_COLOUR: Color = colour!(Birch);
 
     fn draw_picking_side(&mut self) {
         const GAP: f32 = 80.;
@@ -1158,7 +1158,7 @@ impl<'n> Game<'n> {
     }
 
     fn draw_ball(position: Vec3) {
-        draw_sphere(position, Self::BALL_RADIUS + 0.01, None, colour!(Black));
+        draw_sphere(position, Self::BALL_RADIUS + 0.01, None, BLACK);
         draw_sphere(position, Self::BALL_RADIUS, None, Self::BALL_COLOUR);
     }
 }
