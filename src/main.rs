@@ -12,6 +12,7 @@ use macroquad::input::{
     is_mouse_button_pressed, mouse_delta_position, set_cursor_grab, show_mouse,
 };
 use macroquad::math::{vec3, Quat, Rect, Vec3};
+use macroquad::miniquad::conf::Platform;
 use macroquad::miniquad::window::set_mouse_cursor;
 use macroquad::miniquad::CursorIcon;
 use macroquad::models::{
@@ -20,6 +21,7 @@ use macroquad::models::{
 use macroquad::texture::{draw_texture_ex, render_target, DrawTextureParams, Image, RenderTarget};
 use macroquad::time::{get_frame_time, get_time};
 use macroquad::ui::{Style, Ui};
+use macroquad::window::Conf;
 use macroquad::{
     input::{is_mouse_button_released, mouse_position_local, MouseButton},
     prelude::FilterMode,
@@ -72,7 +74,22 @@ macro_rules! include_texture {
         texture
     }};
 }
-#[main("Retro Wicket")]
+
+fn config() -> Conf {
+    Conf {
+        window_title: "Retro Wicket".to_string(),
+        window_width: 1600,
+        window_height: 1000,
+        high_dpi: false,
+        fullscreen: false,
+        sample_count: 1,
+        window_resizable: true,
+        icon: None, // TODO make the icon
+        platform: Platform::default(),
+    }
+}
+
+#[main(config)]
 async fn main() {
     Game::new().run().await;
 }
