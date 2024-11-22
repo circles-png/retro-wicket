@@ -493,7 +493,7 @@ impl<'n> Game<'n> {
     const BALL_RADIUS: f32 = 0.036;
 
     const TARGET: Vec3 = vec3(0., 0., 0.);
-    const POSITION: Vec3 = vec3(0., 10., 30.);
+    const POSITION: Vec3 = vec3(0., 5., 18.);
 
     const BOWLING_CREASE_TO_END: f32 = 1.22;
     const PITCH_WIDTH: f32 = 3.05;
@@ -554,7 +554,7 @@ impl<'n> Game<'n> {
             Self::PITCH_COLOUR,
         );
         let batter_size = 2.;
-        let textures = include_textures!("batter", 1..=2);
+        let textures = [include_texture!("batter")];
         Self::draw_sides();
         Self::draw_stumps();
         draw_affine_parallelogram(
